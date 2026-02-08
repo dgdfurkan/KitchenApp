@@ -9,4 +9,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   base: './', // Ensure relative paths for GitHub Pages
+  build: {
+    outDir: 'docs', // Deploy from /docs folder on GitHub Pages
+  },
 })
