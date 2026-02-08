@@ -15,6 +15,7 @@ export interface Meal {
   recipe?: string; // Optional full recipe text
   prepTime?: string;
   calories?: string;
+  freezerInstructions?: string; // For Freezer Prep mode
 }
 
 export interface DayPlan {
