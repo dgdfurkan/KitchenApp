@@ -1,76 +1,96 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, Sparkles, Clock, Users, Flame, Calendar, ArrowRight } from 'lucide-react';
+import { Copy, Check, Sparkles, Calendar, ArrowRight, Settings2, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { convertToBase } from '../utils/unitConversion';
 
-// Utility for class merging
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
+interface BatchLink {
+  fromDay: number; // 1-based index
+  toDay: number;
+}
+
 export const GeneratorView: React.FC = () => {
-  const { inventory, setInventory, setWeeklyPlan, incrementUsage } = useAppContext();
+  const { inventory, setWeeklyPlan, setInventory, incrementUsage } = useAppContext();
   const [copied, setCopied] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState('');
   const [jsonInput, setJsonInput] = useState('');
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Form State
-  const [days, setDays] = useState(1);
-  const [people, setPeople] = useState(2);
-  const [time, setTime] = useState(30); // minutes
-  const [calories, setCalories] = useState('Standart'); // or number range
-  const [mealTypes, setMealTypes] = useState<string[]>(['Akşam Yemeği']);
-  const [isFreezerFriendly, setIsFreezerFriendly] = useState(false);
-  const [batchCooking, setBatchCooking] = useState(false); // Cook once, eat twice
+  // Advanced Form State
+  const [days, setDays] = useState(3);
+  const [people] = useState(2);
+  const [time] = useState(45);
+  const [calories] = useState('Standart');
+  const [cuisine, setCuisine] = useState<string[]>(['Türk Mutfağı']);
+  const [mood, setMood] = useState('Pratik ve Lezzetli');
+  const [equipment, setEquipment] = useState<string[]>(['Ocak', 'Fırın']);
+  const [batchLinks, setBatchLinks] = useState<BatchLink[]>([]);
 
-  const toggleMealType = (type: string) => {
-    setMealTypes(prev =>
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    );
+  // Toggle helpers
+  const toggleSelection = (_list: string[], item: string, setList: React.Dispatch<React.SetStateAction<string[]>>) => {
+    setList(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
+  };
+
+  const handleBatchLink = (day: number) => {
+    // If day is already a "receiver" (toDay), remove the link
+    if (batchLinks.some(l => l.toDay === day)) {
+      setBatchLinks(prev => prev.filter(l => l.toDay !== day));
+      return;
+    }
+    // Else, link it to the previous day
+    if (day > 1) {
+      setBatchLinks(prev => [...prev, { fromDay: day - 1, toDay: day }]);
+    }
   };
 
   const generatePrompt = () => {
     const ingredientList = inventory.map(i => `- ${i.amount} ${i.unit} ${i.name}`).join('\n');
 
+    // Construct readable batch schedule
+    const batchSchedule = batchLinks.map(l => `Gün ${l.fromDay} -> Gün ${l.toDay} (Dünden Kalan)`).join(', ');
+
     const prompt = `
-Sen profesyonel bir şef ve beslenme uzmanısın. Elimdeki malzemeleri kullanarak bana muazzam bir yemek planı oluşturmanı istiyorum.
+Sen dünya standartlarında yaratıcı bir şefsin. Aşağıdaki malzemeler ve kısıtlamalarla bana MUAZZAM bir yemek planı oluştur.
 
 ELİMDEKİ MALZEMELER:
-${ingredientList || "Elimde özel bir malzeme yok, genel öneriler yap."}
+${ingredientList || "Elimde özel bir malzeme yok, temel kiler malzemeleri var varsay."}
 
-KISITLAMALAR VE TERCİHLER:
-- Plan Süresi: ${days} gün
-- Kişi Sayısı: ${people} kişi
-- Hazırlama Süresi (Maksimum): ${time} dakika
-- Öğün Tipleri: ${mealTypes.join(', ')}
-- Kalori Tercihi: ${calories}
-- Derin Dondurucuya Uygun Olsun mu?: ${isFreezerFriendly ? 'Evet' : 'Hayır'}
-- Toplu Pişirme (Batch Cooking): ${batchCooking ? 'Evet (Bir gün yapıp ertesi gün de yiyebileyim, porsiyonları buna göre ayarla)' : 'Hayır'}
+KISITLAMALAR:
+- Süre: ${days} Günlük Plan
+- Kişi Sayısı: ${people}
+- Maksimum Hazırlık Süresi: ${time} dakika
+- Kalori Hedefi: ${calories}
+- Mutfak Tercihi: ${cuisine.join(', ')}
+- Yemek Modu: ${mood}
+- Mutfak Ekipmanları: ${equipment.join(', ')}
+
+TOPLU PİŞİRME (BATCH COOKING) PLANI:
+${batchSchedule ? batchSchedule : "Her gün taze yemek yapılacak."}
+(Eğer "Dünden Kalan" işaretliyse, o gün yemek pişirilmeyecek, önceki günün yemeği ısıtılıp yenecek. Porsiyonları buna göre hesapla.)
 
 GÖREV:
-Yukarıdaki malzemeleri ve kısıtlamaları dikkate alarak detaylı bir yemek planı oluştur.
-Eğer elimdeki malzemeler yetersizse, minimum ekleme ile yapılabilecek tarifler öner.
-Eğer "Toplu Pişirme" seçiliyse, ertesi gün için "Dünden Kalan" olarak işaretle.
+Detaylı, lezzetli ve israfı önleyen bir plan yap. Eksik malzeme varsa "Alışveriş Listesi"ne ekleyebileceğim makul şeyler öner (ama minimumda tut).
 
-ÇIKTI FORMATI (ÇOK ÖNEMLİ):
-Bana SADECE geçerli bir JSON objesi döndür. Markdown blokları (\`\`\`json ... \`\`\`) kullanma. Sadece saf JSON string'i ver.
-JSON Şeması şu şekilde olmalı:
+ÇIKTI FORMATI (JSON):
+SADECE aşağıdaki JSON şemasını döndür. Markdown yok. Yorum satırı yok.
 {
   "days": [
     {
-      "day": "Gün 1",
+      "day": "Gün 1 (Pazartesi vb.)",
       "meals": [
         {
-          "name": "Yemek Adı",
-          "description": "Kısa ve iştah açıcı açıklama.",
+          "name": "Yemek İsmi",
+          "description": "Kısa, iştah açıcı açıklama.",
           "recipe": "Kısa tarif adımları.",
           "ingredientsUsed": [
-            { "name": "Kullanılan Malzeme Adı", "amount": 0.5, "unit": "kg" }
+            { "name": "Malzeme", "amount": 0.5, "unit": "kg" }
           ],
           "isLeftover": false,
           "prepTime": "30 dk",
@@ -80,11 +100,8 @@ JSON Şeması şu şekilde olmalı:
     }
   ]
 }
-
-NOT: "isLeftover": true olduğunda, "name" kısmına "Dünden Kalan: [Yemek Adı]" yaz ve "ingredientsUsed" listesini boş bırak ([]).
-JSON dışında hiçbir metin yazma.
+NOT: Eğer isLeftover: true ise, ingredientsUsed boş dizi [] olsun.
 `;
-
     setGeneratedPrompt(prompt.trim());
     incrementUsage();
     setSuccessMessage(null);
@@ -101,282 +118,243 @@ JSON dışında hiçbir metin yazma.
     try {
       setProcessingError(null);
       setSuccessMessage(null);
-
-      // Clean up JSON input (remove markdown blocks if present)
       const cleanJson = jsonInput.replace(/```json/g, '').replace(/```/g, '').trim();
       const data = JSON.parse(cleanJson);
 
-      if (!data.days || !Array.isArray(data.days)) {
-        throw new Error("Geçersiz format: 'days' listesi bulunamadı.");
-      }
+      if (!data.days || !Array.isArray(data.days)) throw new Error("JSON formatı hatalı: 'days' dizisi eksik.");
 
-      // 1. Update Weekly Plan
       setWeeklyPlan({ days: data.days });
 
-      // 2. Update Inventory
       const newInventory = [...inventory];
-      const usedIngredients: string[] = [];
+      let deductCount = 0;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data.days.forEach((day: any) => {
-        // Ensure meals have IDs
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         day.meals = day.meals.map((m: any) => ({ ...m, id: m.id || crypto.randomUUID() }));
-
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         day.meals.forEach((meal: any) => {
-          if (meal.isLeftover) return; // Don't deduct for leftovers
-          if (!meal.ingredientsUsed || !Array.isArray(meal.ingredientsUsed)) return;
-
+          if (meal.isLeftover || !meal.ingredientsUsed) return;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           meal.ingredientsUsed.forEach((used: any) => {
-            if (!used.name || !used.amount) return;
+             const invIndex = newInventory.findIndex(i => i.name.toLowerCase().includes(used.name.toLowerCase()));
+             if (invIndex !== -1) {
+               const invItem = newInventory[invIndex];
+               const invBase = convertToBase(invItem.amount, invItem.unit);
+               const usedBase = convertToBase(used.amount, used.unit);
+               if (invBase.unit === usedBase.unit) {
+                 const newAmt = Math.max(0, invBase.amount - usedBase.amount);
+                 // Simple updates for now, ideally convert back
+                 if (invItem.unit === 'kg' && invBase.unit === 'g') newInventory[invIndex].amount = newAmt / 1000;
+                 else if (invItem.unit === 'l' && invBase.unit === 'ml') newInventory[invIndex].amount = newAmt / 1000;
+                 else newInventory[invIndex].amount = newAmt;
 
-            // Find matching ingredient in inventory (fuzzy match?)
-            const invIndex = newInventory.findIndex(i =>
-              i.name.toLowerCase().includes(used.name.toLowerCase()) ||
-              used.name.toLowerCase().includes(i.name.toLowerCase())
-            );
-
-            if (invIndex !== -1) {
-              const invItem = newInventory[invIndex];
-              const invBase = convertToBase(invItem.amount, invItem.unit);
-              const usedBase = convertToBase(used.amount, used.unit);
-
-              // Check if units are compatible (both mass or both volume or both pieces)
-              // convertToBase returns 'g', 'ml', or original.
-              // If units match, subtract.
-              if (invBase.unit === usedBase.unit) {
-                let newAmount = invBase.amount - usedBase.amount;
-                if (newAmount < 0) newAmount = 0; // Don't go below zero
-
-                // Convert back to original unit if possible/approximate
-                // If original was kg, and we have 1500g, keep as kg (1.5)
-                if (invItem.unit === 'kg' && invBase.unit === 'g') {
-                  newInventory[invIndex] = { ...invItem, amount: parseFloat((newAmount / 1000).toFixed(2)) };
-                } else if (invItem.unit === 'l' && invBase.unit === 'ml') {
-                  newInventory[invIndex] = { ...invItem, amount: parseFloat((newAmount / 1000).toFixed(2)) };
-                } else {
-                  newInventory[invIndex] = { ...invItem, amount: parseFloat(newAmount.toFixed(2)), unit: invBase.unit };
-                }
-
-                usedIngredients.push(`${used.name} (${used.amount} ${used.unit})`);
-              }
-            }
+                 deductCount++;
+               }
+             }
           });
         });
       });
 
       setInventory(newInventory);
-      setSuccessMessage(`Plan oluşturuldu ve ${usedIngredients.length} malzeme stoktan düşüldü!`);
+      setSuccessMessage(`Harika! Plan yüklendi ve ${deductCount} kalem malzeme stoktan düşüldü.`);
       setJsonInput('');
-
-    } catch (err) {
-      console.error(err);
-      setProcessingError("JSON işlenirken hata oluştu. Lütfen formatı kontrol edin.");
+    } catch (e) {
+      setProcessingError("JSON Hatası: Lütfen Gemini cevabını olduğu gibi yapıştırın.");
+      console.error(e);
     }
   };
 
   return (
-    <div className="p-4 pb-24 max-w-md mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Şefin Masası</h1>
-        <p className="text-sm text-gray-500">Kriterleri belirle, Gemini şefe sor.</p>
+    <div className="p-4 pb-28 max-w-lg mx-auto min-h-screen">
+      <header className="mb-8 pt-4">
+        <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-pink-500 mb-2">
+          Şefin Stüdyosu 👨‍🍳
+        </h1>
+        <p className="text-gray-500 text-sm">Hayalindeki menüyü tasarla.</p>
       </header>
 
       <div className="space-y-6">
-        {/* Duration Slider */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-3 text-gray-700">
-            <Calendar size={18} />
-            <h3 className="font-medium">Plan Süresi</h3>
+        {/* DAY SLIDER & BATCH LINKER */}
+        <section className="glass-panel p-6 rounded-3xl">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-gray-700 flex items-center gap-2">
+              <Calendar className="text-violet-500" size={20} />
+              Zaman Çizelgesi
+            </h3>
+            <span className="text-2xl font-black text-violet-600">{days} Gün</span>
           </div>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="1"
-              max="7"
-              value={days}
-              onChange={(e) => setDays(parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-            />
-            <span className="font-bold text-blue-600 w-12 text-center">{days} Gün</span>
-          </div>
-        </div>
 
-        {/* People Counter */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-3 text-gray-700">
-            <Users size={18} />
-            <h3 className="font-medium">Kişi Sayısı</h3>
-          </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setPeople(Math.max(1, people - 1))}
-              className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold hover:bg-gray-200"
-            >-</button>
-            <span className="font-bold text-gray-800 text-lg w-8 text-center">{people}</span>
-            <button
-              onClick={() => setPeople(people + 1)}
-              className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold hover:bg-blue-200"
-            >+</button>
-          </div>
-        </div>
+          <input
+            type="range" min="1" max="7" value={days}
+            onChange={(e) => { setDays(parseInt(e.target.value)); setBatchLinks([]); }}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-violet-600 mb-6"
+          />
 
-        {/* Time Slider */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-3 text-gray-700">
-            <Clock size={18} />
-            <h3 className="font-medium">Hazırlama Süresi (Maks)</h3>
-          </div>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="15"
-              max="180"
-              step="15"
-              value={time}
-              onChange={(e) => setTime(parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
-            />
-            <span className="font-bold text-orange-500 w-16 text-center">{time} dk</span>
-          </div>
-        </div>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {Array.from({ length: days }).map((_, i) => {
+              const dayNum = i + 1;
+              const isLinked = batchLinks.some(l => l.toDay === dayNum);
 
-        {/* Calorie Preference */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-3 text-gray-700">
-            <Flame size={18} />
-            <h3 className="font-medium">Kalori Tercihi</h3>
+              return (
+                <button
+                  key={dayNum}
+                  onClick={() => handleBatchLink(dayNum)}
+                  disabled={dayNum === 1}
+                  className={cn(
+                    "flex-shrink-0 w-14 h-20 rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all relative overflow-hidden",
+                    isLinked
+                      ? "bg-orange-50 border-orange-400 text-orange-600"
+                      : "bg-white border-gray-100 text-gray-500 hover:border-violet-200"
+                  )}
+                >
+                  {isLinked && (
+                    <div className="absolute top-0 inset-x-0 h-1 bg-orange-400" />
+                  )}
+                  <span className="text-xs font-bold">GÜN</span>
+                  <span className="text-xl font-black">{dayNum}</span>
+                  {isLinked ? <LinkIcon size={12} /> : dayNum > 1 && <span className="text-[10px] opacity-50">Bağla</span>}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex flex-wrap gap-2">
-            {['Düşük Kalori', 'Standart', 'Yüksek Protein', 'Bol Karbonhidrat'].map(opt => (
-              <button
-                key={opt}
-                onClick={() => setCalories(opt)}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
-                  calories === opt
-                    ? "bg-orange-100 text-orange-700 border-orange-200"
-                    : "bg-gray-50 text-gray-500 border-gray-100 hover:bg-gray-100"
-                )}
-              >
-                {opt}
-              </button>
-            ))}
+          <p className="text-xs text-gray-400 mt-2 text-center">
+            Günleri birbirine bağlayarak "Dünden Kalan" (Toplu Pişirme) planlayabilirsin.
+          </p>
+        </section>
+
+        {/* SMART FILTERS */}
+        <section className="glass-panel p-6 rounded-3xl space-y-6">
+          <h3 className="font-bold text-gray-700 flex items-center gap-2">
+            <Settings2 className="text-pink-500" size={20} />
+            Akıllı Tercihler
+          </h3>
+
+          {/* Cuisine */}
+          <div>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Mutfak</label>
+            <div className="flex flex-wrap gap-2">
+              {['Türk Mutfağı', 'İtalyan', 'Uzak Doğu', 'Akdeniz', 'Sürpriz'].map(c => (
+                <button
+                  key={c}
+                  onClick={() => toggleSelection(cuisine, c, setCuisine)}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-sm font-medium transition-all border",
+                    cuisine.includes(c)
+                      ? "bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200"
+                      : "bg-white text-gray-500 border-gray-100 hover:bg-gray-50"
+                  )}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Meal Types */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="font-medium text-gray-700 mb-3">Öğünler</h3>
-          <div className="flex flex-wrap gap-2">
-            {['Kahvaltı', 'Öğle', 'Akşam', 'Ara Öğün'].map(type => (
-              <button
-                key={type}
-                onClick={() => toggleMealType(type)}
-                className={cn(
-                  "px-4 py-2 rounded-full text-sm font-medium transition-colors border",
-                  mealTypes.includes(type)
-                    ? "bg-green-100 text-green-700 border-green-200"
-                    : "bg-gray-50 text-gray-500 border-gray-100 hover:bg-gray-100"
-                )}
-              >
-                {type}
-              </button>
-            ))}
+          {/* Mood */}
+          <div>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Mod</label>
+            <div className="grid grid-cols-2 gap-2">
+              {['Pratik ve Hızlı', 'Ziyafet Sofrası', 'Diyet / Hafif', 'Anne Yemeği (Comfort)'].map(m => (
+                <button
+                  key={m}
+                  onClick={() => setMood(m)}
+                  className={cn(
+                    "px-3 py-3 rounded-xl text-sm font-medium transition-all border text-left",
+                    mood === m
+                      ? "bg-pink-500 text-white border-pink-500 shadow-lg shadow-pink-200"
+                      : "bg-white text-gray-500 border-gray-100 hover:bg-gray-50"
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Other Options */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={batchCooking}
-              onChange={(e) => setBatchCooking(e.target.checked)}
-              className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
-            />
-            <span className="text-gray-700">Toplu Pişirme (2 Günlük Yap)</span>
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isFreezerFriendly}
-              onChange={(e) => setIsFreezerFriendly(e.target.checked)}
-              className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
-            />
-            <span className="text-gray-700">Dondurucuya Uygun Olsun</span>
-          </label>
-        </div>
+           {/* Equipment */}
+           <div>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Ekipman</label>
+            <div className="flex flex-wrap gap-2">
+              {['Ocak', 'Fırın', 'Airfryer', 'Düdüklü', 'Blender'].map(eq => (
+                <button
+                  key={eq}
+                  onClick={() => toggleSelection(equipment, eq, setEquipment)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                    equipment.includes(eq)
+                      ? "bg-gray-800 text-white border-gray-800"
+                      : "bg-white text-gray-400 border-gray-100"
+                  )}
+                >
+                  {eq}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
 
-        {/* Generate Button */}
-        <button
+        {/* Generate Action */}
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           onClick={generatePrompt}
-          className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg font-bold text-lg flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-transform"
+          className="w-full py-5 bg-gradient-to-r from-violet-600 to-pink-600 text-white rounded-2xl shadow-xl shadow-violet-500/30 flex items-center justify-center gap-3 text-lg font-bold"
         >
-          <Sparkles size={24} />
-          Prompt Oluştur
-        </button>
+          <Sparkles className="animate-pulse" />
+          Sihirli Menüyü Oluştur
+        </motion.button>
 
-        {/* Prompt Output Area */}
+        {/* Prompt Output */}
         <AnimatePresence>
           {generatedPrompt && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="space-y-2"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass-panel p-4 rounded-3xl border-2 border-violet-100"
             >
-              <div className="bg-gray-900 text-gray-300 p-4 rounded-xl text-xs font-mono overflow-auto max-h-60 relative group">
-                <pre>{generatedPrompt}</pre>
-                <button
-                  onClick={copyToClipboard}
-                  className="absolute top-2 right-2 p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-violet-400 uppercase">Gemini Prompt</span>
+                <button onClick={copyToClipboard} className="p-2 bg-violet-100 text-violet-600 rounded-lg">
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
                 </button>
               </div>
-              <p className="text-center text-xs text-gray-500">
-                Bu metni kopyalayıp Gemini'ye yapıştırın, gelen cevabı aşağıya girin.
-              </p>
+              <div className="bg-gray-900 text-gray-300 p-4 rounded-xl text-[10px] font-mono overflow-auto max-h-40 mb-4">
+                {generatedPrompt}
+              </div>
+
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowRight className="text-pink-500" />
+                <h4 className="font-bold text-gray-700">Cevabı İşle</h4>
+              </div>
+              <textarea
+                value={jsonInput}
+                onChange={(e) => setJsonInput(e.target.value)}
+                placeholder="Gemini'den gelen JSON'ı buraya yapıştır..."
+                className="w-full h-24 p-3 bg-white border border-gray-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-pink-400 outline-none"
+              />
+
+              {processingError && (
+                <div className="mt-2 p-3 bg-red-50 text-red-500 text-xs rounded-lg flex gap-2 items-center">
+                  <AlertTriangle size={14} /> {processingError}
+                </div>
+              )}
+               {successMessage && (
+                <div className="mt-2 p-3 bg-green-50 text-green-600 text-xs rounded-lg flex gap-2 items-center font-bold">
+                  <Check size={14} /> {successMessage}
+                </div>
+              )}
+
+              <button
+                onClick={handleProcessResponse}
+                disabled={!jsonInput}
+                className="w-full mt-3 py-3 bg-gray-900 text-white rounded-xl font-bold disabled:opacity-50"
+              >
+                Planı Uygula 🚀
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Response Input Area */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-8">
-          <div className="flex items-center gap-2 mb-3 text-gray-700">
-            <ArrowRight size={18} />
-            <h3 className="font-medium">2. Adım: Cevabı Yapıştır</h3>
-          </div>
-          <textarea
-            value={jsonInput}
-            onChange={(e) => setJsonInput(e.target.value)}
-            placeholder='Gemini&#39;den gelen JSON cevabını buraya yapıştırın...'
-            className="w-full h-32 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none mb-3 text-xs font-mono text-gray-700"
-          />
-
-          {processingError && (
-            <div className="mb-3 p-3 bg-red-50 text-red-600 rounded-lg text-sm border border-red-100">
-              {processingError}
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="mb-3 p-3 bg-green-50 text-green-600 rounded-lg text-sm border border-green-100">
-              {successMessage}
-            </div>
-          )}
-
-          <button
-            onClick={handleProcessResponse}
-            disabled={!jsonInput.trim()}
-            className="w-full py-3 bg-green-600 text-white rounded-xl shadow-lg font-bold flex items-center justify-center gap-2 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Check size={20} />
-            Planı Uygula
-          </button>
-        </div>
       </div>
     </div>
   );
